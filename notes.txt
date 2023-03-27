@@ -1,0 +1,68 @@
+
+Query:
+MATCH (a:Compound)-[r]-(x)
+WHERE a.name IN ['(E)-2-hexenal', '1-hexanal'] AND type(r) <> "canProduce"
+RETURN a, r, x
+
+Reaction nodes connecting (E)-2-hexenal to 1-hexanal, specifically these two Compound
+nodes (as it seems there are some likely duplicates, that have diff connectivity and may
+only differ in ID?):
+
+(E)-2-hexenal:
+<id>: 96510
+boundaryCondition: false
+chemicalFormula: C6H10O
+commonName: (E)-2-hexenal
+constant: false
+gibbs0: 95.95121
+hasOnlySubstanceUnits: false
+inchi: InChI=1S/C6H10O/c1-2-3-4-5-6-7/h4-6H,2-3H2,1H3/b5-4+
+logp: 1.5
+metaId: TRANS__45__2__45__HEXENAL_c
+molecularWeight: 98.144
+monoisotopicMw: 98.0731649431
+name: (E)-2-hexenal
+polarSurfaceArea: 17.1
+smiles: CCC/C=C/C=O
+synonyms: trans-2-hexenal
+
+1-hexanal:
+<id>: 87384
+boundaryCondition: false
+chemicalFormula: C6H12O
+commonName: 1-hexanal
+constant: false
+gibbs0: 95.68345
+hasOnlySubstanceUnits: false
+inchi: InChI=1S/C6H12O/c1-2-3-4-5-6-7/h6H,2-5H2,1H3
+logp: 1.8
+metaId: HEXANAL_c
+molecularWeight: 100.16
+monoisotopicMw: 100.0888150073
+name: 1-hexanal
+polarSurfaceArea: 17.1
+smiles: CCCCCC=O
+synonyms: hexaldehyde
+
+Reactions connecting them (didn't include one in reverse hasLeft/hasRight direction):
+<id>: 121236
+canonicalId: RXN-11696
+fast: false
+gibbs0: 24.142883
+metaId: RXN__45__11696__45__HEXANAL__47__NADP__47____47__TRANS__45__2__45__HEXENAL__47__NADPH__47__PROTON__46__43__46__
+name: RXN-11696-HEXANAL/NADP//TRANS-2-HEXENAL/NADPH/PROTON.43.
+reactionBalanceStatus: balanced
+reactionDirection: physiol_left_to_right
+reversible: false
+types: Chemical-Reactions,Small-Molecule-Reactions
+
+<id>: 139575
+canonicalId: RXN-11696
+fast: false
+gibbs0: 24.142883
+metaId: RXN__45__11696__45__HEXANAL__47__NAD__47____47__TRANS__45__2__45__HEXENAL__47__NADH__47__PROTON__46__41__46__
+name: RXN-11696-HEXANAL/NAD//TRANS-2-HEXENAL/NADH/PROTON.41.
+reactionBalanceStatus: balanced
+reactionDirection: physiol_left_to_right
+reversible: false
+types: Chemical-Reactions,Small-Molecule-Reactions

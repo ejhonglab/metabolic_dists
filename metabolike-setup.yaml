@@ -1,0 +1,36 @@
+neo4j:
+  uri: "neo4j://localhost:7687"
+  # TODO what to do when i have NEO4J_AUTH=none set? just set auth?
+  # wish these just worked with the same env vars in .env, or something similar...
+  user: neo4j
+  password: metabolike
+  database: neo4j
+
+metacyc:
+  sbml: ./tier1-tier2/metacyc/metabolic-reactions.xml
+  reactions: ./tier1-tier2/metacyc/reactions.dat
+  ##atom_mapping: ./tier1-tier2/metacyc/atom-mapping.dat
+  # TODO TODO try without this and compare distances on at least a few examples
+  # chemicals (or maybe automated script to compare full distance matrix in all
+  # chemicals?)
+  # (would need a replacement for isPrecedingEvent, as this is required for that)
+  pathways: ./tier1-tier2/metacyc/pathways.dat
+  compounds: ./tier1-tier2/metacyc/compounds.dat
+  #publications: ./tier1-tier2/metacyc/pubs.dat
+  #classes: ./tier1-tier2/metacyc/classes.dat
+
+  #sbml: ./tier1-tier2/yeastcyc/metabolic-reactions.xml
+  #reactions: ./tier1-tier2/yeastcyc/reactions.dat
+  ##atom_mapping: ./tier1-tier2/yeastcyc/atom-mapping.dat
+  #pathways: ./tier1-tier2/yeastcyc/pathways.dat
+  #compounds: ./tier1-tier2/yeastcyc/compounds.dat
+  #publications: ./tier1-tier2/yeastcyc/pubs.dat
+  #classes: ./tier1-tier2/yeastcyc/classes.dat
+
+  #sbml: ./tier1-tier2/pabtqvlccyc/metabolic-reactions.xml
+  #reactions: ./tier1-tier2/pabtqvlccyc/reactions.dat
+  ##atom_mapping: ./tier1-tier2/pabtqvlccyc/atom-mapping.dat
+  #pathways: ./tier1-tier2/pabtqvlccyc/pathways.dat
+  #compounds: ./tier1-tier2/pabtqvlccyc/compounds.dat
+  #publications: ./tier1-tier2/pabtqvlccyc/pubs.dat
+  #classes: ./tier1-tier2/pabtqvlccyc/classes.dat
