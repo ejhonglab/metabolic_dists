@@ -66,6 +66,28 @@ def metacyc_id2biocyc(metacyc_id):
     return _meta2biocyc.at[metacyc_id, 'biocyc']
 
 
+# Copied from my chemutils repo, to avoid dependency for just this
+def pubchem_url(cid):
+    if pd.isnull(cid):
+        return cid
+    return 'https://pubchem.ncbi.nlm.nih.gov/compound/{}'.format(cid)
+
+
+# Also copied from chemutils.
+def basic_inchi(inchi, no_stereochem=False):
+    parts = inchi.split('/')
+    if no_stereochem:
+        keep = {'c','h'}
+    else:
+        # NOTE: 'b' layer is only one of the stereochemistry layers.
+        # It is specifically "double bonds and cumulenes", whereas "t"/"m"/"s" layers
+        # can have other types of stereochemistry information.
+        # TODO might want to handle those other stereochem layers consistently8 w/ 'b'
+        # layer... (any complications though?)
+        keep = {'c','h','b'}
+    return '/'.join(parts[:2] + [p for p in parts[2:] if p[0] in keep])
+
+
 # TODO TODO are rdf nodes and compound nodes 1:1 (how much can we rely on the various
 # IDs?)
 
@@ -225,6 +247,16 @@ def read_db_records(db: Neo4jClient, query: str, **kwargs):
         return records
 
     return db.read_tx(_read_records, **kwargs)
+
+
+def get_compounds_via_inchi(db: Neo4jClient, inchi: str) -> list[dict]:
+    # TODO TODO option to substring search too (ideally letting either db / input str
+    # have more/less layers, as long as all layers match?)
+    query = """
+    MATCH (c:Compound) WHERE c.inchi = $inchi RETURN c
+    """
+    records = read_db_records(db, query, inchi=inchi)
+    return [dict(x['c']) for x in records]
 
 
 def get_transport_reactions(db: Neo4jClient) -> set[str]:
@@ -419,6 +451,13 @@ def get_transport_reactions(db: Neo4jClient) -> set[str]:
 
 
 def get_blacklist_compound_metaids(db: Neo4jClient) -> list[str]:
+
+    # TODO TODO TODO add to blacklist:
+    # - 'an oxidized cytochrome c-553'
+    # - 'an oxidized [NapC protein]'
+    #
+    # TODO TODO try blacklisting anything with 'an [oxidized|reduced]' in it?
+    # or 'an [oxidized|reduced] <x> protein'?
 
     blacklist_compound_names = [
         'H',
@@ -1017,7 +1056,9 @@ def collapse_transport_rxns(transport_reaction_metaids: set[str], path: dict) ->
         print('path with transport reactions collapsed:')
         print_path(new_path)
 
-        print(f'old length: {len(path)}, after collapsing transport: {len(new_path)}')
+        print(f'old length: {len(path["reactions"])}, '
+            f'after collapsing transport: {len(reactions)}'
+        )
         print()
     else:
         assert not _had_transport
@@ -1129,13 +1170,17 @@ def main():
         inchikey = InchiToInchiKey(chemical.inchi)
         assert inchikey == chemical.inchikey
 
-        # TODO smiles after inchikey? check if it's ever available when cid/inchikey
-        # aren't
-        additional_ids_to_try = ['inchikey', 'name', 'iupac_name']
+        # TODO TODO TODO smiles after inchikey? check if it's ever available when
+        # cid/inchikey aren't
+        additional_ids_to_try = ['inchikey', 'name', 'iupac_name', 'canonical_smiles',
+            'isomeric_smiles'
+        ]
         meta_ids = []
         for chem_id in additional_ids_to_try:
             # TODO edit type annotation of output of this fn to indicate it's optional
-            hits = cm.compound_exact_match(getattr(chemical, chem_id))
+            # TODO modify compound_exact_match to not lowercase unnecessarily / at least
+            # to lowercase the query automatically?
+            hits = cm.compound_exact_match(getattr(chemical, chem_id).lower())
             if hits is None:
                 continue
 
@@ -1180,6 +1225,10 @@ def main():
     #
     # TODO try to replace all relationship creation->blacklisting->deletion stuff with a
     # graph projection? would memory be an issue?
+    #
+    # TODO TODO TODO also have this shortcut all transport reactions with canProduce
+    # from all inputs to all outputs (/something like that?) (would need to do before
+    # deleting canProduce relationships according to blacklist)?
     blacklist_compound_metaids = setup_canproduce_relationships(db)
 
     # If False, blacklist will only apply to non-pathway-only searches.
@@ -1194,6 +1243,14 @@ def main():
     remy_ids_not_in_db = set()
     name2remy_biocyc_id = dict()
 
+    dont_use_remys_for = {
+        # She has the name for this a-s '1-pentanal', which is wrong.
+        # (she also has pentanal in row 46, which is where I have it)
+        'pentanoic acid',
+    }
+    assert all([x in hdf.name.values for x in dont_use_remys_for])
+    using_remys_for = set()
+
     # TODO TODO use this to print those w/ multiple biocyc ids
     # (to decide if i want to manually disambiguate any of them)
     name2biocyc_ids = dict()
@@ -1206,13 +1263,19 @@ def main():
         name2meta_ids[name] = meta_ids
 
         remy_biocyc = remy_row['Object ID']
-        if pd.notna(remy_biocyc):
+        if name in dont_use_remys_for:
+            print("Remy's IDs marked bad for this chemical")
+            remy_biocyc = None
+
+        elif pd.notna(remy_biocyc):
 
             print("Remy's biocyc ID:")
             print_biocyc_compound_link(remy_biocyc)
             name2remy_biocyc_id[name] = remy_biocyc
 
             if remy_biocyc not in biocyc_id_set:
+                # TODO TODO inspect each of these
+                print("Remy's biocyc ID seemingly not in database!")
                 remy_ids_not_in_db.add(remy_biocyc)
                 remy_biocyc = None
 
@@ -1224,8 +1287,10 @@ def main():
 
             # refactor
             if pd.notna(remy_biocyc):
+                print("using Remy's biocyc ID")
                 meta_ids = biocyc2metacyc_ids(remy_biocyc)
                 if meta_ids is not None:
+                    using_remys_for.add(name)
                     name2meta_ids[name] = meta_ids
 
             print()
@@ -1246,8 +1311,9 @@ def main():
         if pd.notna(remy_biocyc):
             #assert remy_biocyc in biocyc_ids, f'{remy_biocyc=}'
             if remy_biocyc not in biocyc_ids:
+                # this seemed to only be true for one row where remy had the wrong
+                # chemical (copy paste error?)
                 print(f'{remy_biocyc=} not in output of lookup {biocyc_ids}!')
-                import ipdb; ipdb.set_trace()
 
             # TODO hardcode using remy's here (if multiple biocyc_ids)?
 
@@ -1272,16 +1338,88 @@ def main():
         print()
 
     print()
+    print(f'{len(cids_not_in_db)} CIDs not in db')
+    # doesn't include the 1 thing found via remy's IDs
+    print(f'{len(not_found_in_db)} not found in db')
+
+    print()
     print("IDs in Remy's spreadsheet, but not in db biocyc IDs:")
     # TODO confirm these not in db (via separate query? metaId STARTS WITH?
     # def not in _meta2biocyc right?
     pprint(remy_ids_not_in_db)
 
+    print("more details where Remy's biocyc IDs not in db:")
+    for _, row in remy_metacyc_df.iterrows():
+        if not row['Object ID'] in remy_ids_not_in_db:
+            continue
+
+        print(f"name: {row['Common-Name']}, biocyc ID (not in db): {row['Object ID']}")
+
+        pubchem = row['PubChem']
+        if pd.notna(pubchem):
+            print(pubchem_url(int(row['PubChem'])))
+        else:
+            print('Remy had no PubChem CID')
+
+        if name in name2meta_ids and name2meta_ids[name] is not None:
+            print(f'MetaCyc IDs found via lookup: {pformat(name2meta_ids[name])}')
+        else:
+            print('no MetaCyc IDs found via lookup')
+
+        print()
+
+    n_hallem = len(hdf)
+    assert n_hallem == 110
+    assert len(name2meta_ids) == n_hallem
+
+    names_not_found = sorted([n for n, v in name2meta_ids.items() if v is None])
+
+    # none of these InChI searches turned up anything
+    '''
+    hdf = hdf.set_index('name', verify_integrity=True)
+    for name in names_not_found:
+        row = hdf.loc[name]
+
+        print(name)
+        print(f'IUPAC: {row.iupac_name}')
+        inchi = row.inchi
+        print(inchi)
+        print(pubchem_url(row.cid))
+
+        print(f'canonical SMILES: {row.canonical_smiles}')
+
+        if row.canonical_smiles != row.isomeric_smiles:
+            print(f'isomeric SMILES: {row.isomeric_smiles}')
+
+        # TODO TODO TODO try manually querying w/ other stuff (smiles?)
+        compounds = get_compounds_via_inchi(db, inchi)
+        if len(compounds) > 0:
+            print('FOUND VIA INCHI!')
+            pprint(compounds)
+            import ipdb; ipdb.set_trace()
+
+        # TODO prob delete
+        basic = basic_inchi(inchi, no_stereochem=True)
+        if inchi != basic:
+            # TODO substr here... (e.g. `x STARTS WITH ($basic + '/'))?
+            compounds = get_compounds_via_inchi(db, basic)
+            if len(compounds) > 0:
+                print(f'{inchi=}')
+                print(f'{basic=}')
+                print('FOUND BASIC INCHI!')
+                pprint(compounds)
+                import ipdb; ipdb.set_trace()
+        #
+
+        print()
+    '''
+
     print()
-    print(f'{len(cids_not_in_db)} CIDs not in db')
-    print(f'{len(not_found_in_db)} not found in db')
+    n_hallem_not_found = len(names_not_found)
+    # TODO move this print after detail printing, after getting detail printing working
+    print(f'{n_hallem_not_found}/{n_hallem} odors not found in database:')
+    pprint(names_not_found)
     print()
-    import ipdb; ipdb.set_trace()
 
     names = list(name2meta_ids.keys())
 
