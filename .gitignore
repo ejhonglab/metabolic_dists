@@ -1,3 +1,5 @@
 tier1-tier2/
 *.p
 *_out.txt
+# This should define NEO4J_AUTH=<username>/<password>
+.env

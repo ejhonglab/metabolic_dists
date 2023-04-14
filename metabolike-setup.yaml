@@ -9,15 +9,12 @@ neo4j:
 metacyc:
   sbml: ./tier1-tier2/metacyc/metabolic-reactions.xml
   reactions: ./tier1-tier2/metacyc/reactions.dat
-  ##atom_mapping: ./tier1-tier2/metacyc/atom-mapping.dat
-  # TODO TODO try without this and compare distances on at least a few examples
-  # chemicals (or maybe automated script to compare full distance matrix in all
-  # chemicals?)
-  # (would need a replacement for isPrecedingEvent, as this is required for that)
+  # Currently causes an error (see 2023-04-13_atom_mapping_err.txt)
+  #atom_mapping: ./tier1-tier2/metacyc/atom-mapping.dat
   pathways: ./tier1-tier2/metacyc/pathways.dat
   compounds: ./tier1-tier2/metacyc/compounds.dat
-  #publications: ./tier1-tier2/metacyc/pubs.dat
-  #classes: ./tier1-tier2/metacyc/classes.dat
+  publications: ./tier1-tier2/metacyc/pubs.dat
+  classes: ./tier1-tier2/metacyc/classes.dat
 
   #sbml: ./tier1-tier2/yeastcyc/metabolic-reactions.xml
   #reactions: ./tier1-tier2/yeastcyc/reactions.dat

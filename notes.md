@@ -4,7 +4,7 @@ docker up process doesn't depend on other stuff in that directory.
 
 To start Docker container (making if it doesn't exist yet):
 ```
-docker compose up -d
+sudo docker compose up -d
 ```
 
 To create database, after Docker command above:
@@ -18,7 +18,7 @@ making a database...
 
 To clean up Docker data (to remake from scratch):
 ```
-docker compose down -v
+sudo docker compose down -v
 ```
 
 

@@ -459,6 +459,9 @@ def get_blacklist_compound_metaids(db: Neo4jClient) -> list[str]:
     # TODO TODO try blacklisting anything with 'an [oxidized|reduced]' in it?
     # or 'an [oxidized|reduced] <x> protein'?
 
+    # TODO TODO TODO TODO 4-12: add these to blacklist
+    # - dGDP (and other nucleoside diphosphates)
+
     blacklist_compound_names = [
         'H',
         'H+',
@@ -507,6 +510,7 @@ def get_blacklist_compound_metaids(db: Neo4jClient) -> list[str]:
     # blacklist: (count - metaId (synonym))
     # 450 - "AMMONIUM_c" (eh...)
     # 286 - "PYRUVATE_c"
+    # TODO TODO TODO probably *do* blacklist this one?
     # 215 - "ACET_c" (acetate)
     # 190 - "FARNESYL__45__PP_c" (?)
     # 180 - "GLUTATHIONE_c" (?)
@@ -526,7 +530,7 @@ def get_blacklist_compound_metaids(db: Neo4jClient) -> list[str]:
         # see what effect it actually has on computed paths
         'AMMONIUM_c',
         'PYRUVATE_c',
-        'ACET_c',
+        #'ACET_c',
         'FARNESYL__45__PP_c',
         'GLUTATHIONE_c',
         'GLY_c',
