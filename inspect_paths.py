@@ -23,14 +23,24 @@ def main():
     SEED = None
     random.seed(SEED)
 
+    # acetate, dGDP, etc not in blacklist here
+    #data_dir = Path('2023-04-03_outputs')
+
+    # Added a few things to compound name blacklist for this, but it crashed partway
+    # through run
+    #data_dir = Path('2023-04-18_partial_outputs')
+    data_dir = Path('2023-04-19_outputs')
     #data_dir = Path('.')
-    data_dir = Path('2023-04-03_outputs')
+
+    print('loading distances and paths...', flush=True, end='')
 
     min_dists = pd.read_pickle(data_dir / 'min_dists.p')
     pathway_min_dists = pd.read_pickle(data_dir / 'pathway_min_dists.p')
 
     min_paths = pd.read_pickle(data_dir / 'min_paths.p')
     pathway_min_paths = pd.read_pickle(data_dir / 'pathway_min_paths.p')
+
+    print(' done', flush=True)
 
 
     def sample_path(path_df: pd.DataFrame, seed=SEED) -> dict:
@@ -97,5 +107,7 @@ def main():
 
 
 if __name__ == '__main__':
+    # TODO TODO TODO also take optional args to pass in chemical names to check
+    # TODO also arg to check all paths sequentially? just always do in above case?
     main()
 

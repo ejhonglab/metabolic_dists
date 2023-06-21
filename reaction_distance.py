@@ -2,6 +2,7 @@
 
 # NOTE: pairwise requires python >= 3.10
 from itertools import product, pairwise
+from pathlib import Path
 from pprint import pprint, pformat
 import time
 from textwrap import dedent
@@ -29,16 +30,28 @@ URI = 'neo4j://atlas'
 AUTH = ('neo4j', 'metabolike')
 
 # TODO need to add port (7687) to end of URI?
-db = Neo4jClient(URI, *AUTH)
+db = None
+cm = None
+id_table = None
+cpds = None
+_meta2biocyc = None
 
-cm = CompoundMap(db)
+def init_db():
+    # Hack just to avoid making connection to db in scripts that call functions here
+    # that don't require the db.
+    global db, cm, id_table, cpds, _meta2biocyc
 
-id_table = cm.id_table
-cpds = cm.cpds
+    db = Neo4jClient(URI, *AUTH)
 
-_meta2biocyc = id_table.dropna(subset='metaId').set_index('metaId',
-    verify_integrity=True
-)
+    cm = CompoundMap(db)
+
+    id_table = cm.id_table
+    cpds = cm.cpds
+
+    _meta2biocyc = id_table.dropna(subset='metaId').set_index('metaId',
+        verify_integrity=True
+    )
+
 
 def biocyc2metacyc_ids(biocyc):
     # TODO replace by setting index on biocyc id (w/ verify_integrity=True)
@@ -460,7 +473,7 @@ def get_blacklist_compound_metaids(db: Neo4jClient) -> list[str]:
     # or 'an [oxidized|reduced] <x> protein'?
 
     # TODO TODO TODO TODO 4-12: add these to blacklist
-    # - dGDP (and other nucleoside diphosphates)
+    # - dGDP (and other nucleoside diphosphates),
 
     blacklist_compound_names = [
         'H',
@@ -468,12 +481,18 @@ def get_blacklist_compound_metaids(db: Neo4jClient) -> list[str]:
         'ATP',
         'ADP',
         'GDP',
+        'dGDP',
+        'UDP',
+        'dUDP',
+        'GTP',
+        'dGTP',
         'NADH',
         'NADPH',
         'NADP+',
         'NAD+',
         'phosphate',
         'diphosphate',
+        'acetate',
         'H2O',
         'CO2',
         'dioxygen',
@@ -1096,7 +1115,47 @@ def collapse_transport_rxns_across_paths(transport_reaction_metaids: set[str],
     return new_min_len, paths
 
 
+def init_dist_and_path_matrices(odor_names: list[str]
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+
+    # TODO delete after getting NaN init to work
+    #dists = pd.DataFrame(index=odor_names, columns=odor_names, data=float('inf'))
+    dists = pd.DataFrame(index=odor_names, columns=odor_names, data=float('nan'))
+    dists.index.name = 'from'
+    dists.columns.name = 'to'
+
+    # dtype='object' necessary to assign lists as elements w/o issue
+    paths = pd.DataFrame(index=odor_names, columns=odor_names, data=float('nan'),
+        dtype='object'
+    )
+    paths.index.name = 'from'
+    paths.columns.name = 'to'
+
+    return dists, paths
+
+
+# TODO type of new_paths? list of list of str?  Optional[...] (can it be None?)?
+def update_dist_and_path(dists: pd.DataFrame, paths: pd.DataFrame,
+    name1: str, name2: str, new_dist: float, new_paths) -> None:
+
+    old_dist = dists.at[name1, name2]
+    # the distance matrix should use NaN only for stuff that hasn't been computed yet.
+    # should be inf for stuff where there is no path between the two chemicals.
+    # the path matrix will use NaN for both uncomputed and unreachable pairs.
+    assert not pd.isna(new_dist)
+    if pd.isna(old_dist) or new_dist < old_dist:
+        # TODO just save the pickles in here if something changes? would require more
+        # params...
+        dists.at[name1, name2] = new_dist
+        paths.at[name1, name2] = new_paths
+
+
 def main():
+    # Sets globals used throughout
+    init_db()
+
+    resume_from_pickles = True
+
     # TODO TODO use remy's spreadsheet that specifically includes metacyc IDs for the
     # hallem odors (partially manually looked up). and was her automated process more
     # succesful than mine?
@@ -1233,6 +1292,9 @@ def main():
     # TODO TODO TODO also have this shortcut all transport reactions with canProduce
     # from all inputs to all outputs (/something like that?) (would need to do before
     # deleting canProduce relationships according to blacklist)?
+    # TODO TODO TODO TODO test weighted shortest path calls by defining a canProduce
+    # cost w/ 0 for transport reactions (1 elsewhere), and compare outputs to existing
+    # unweighted solutions (that then have transport reactions "collapsed")
     blacklist_compound_metaids = setup_canproduce_relationships(db)
 
     # If False, blacklist will only apply to non-pathway-only searches.
@@ -1427,28 +1489,45 @@ def main():
 
     names = list(name2meta_ids.keys())
 
-    # TODO separate matrices pre-collapsing (esp until i'm confident in that...)?
+    # TODO TODO TODO separate matrices pre-collapsing (esp until i'm confident in
+    # that...)?
 
-    pathway_min_dists = pd.DataFrame(index=names, columns=names, data=float('inf'))
-    pathway_min_dists.index.name = 'from'
-    pathway_min_dists.columns.name = 'to'
+    # TODO factor so basenames can be used in inspect_paths.py too
+    # (make these module-level)
+    pathway_min_dists_pickle = Path('pathway_min_dists.p')
+    pathway_min_paths_pickle = Path('pathway_min_paths.p')
+    min_dists_pickle = Path('min_dists.p')
+    min_paths_pickle = Path('min_paths.p')
 
-    min_dists = pd.DataFrame(index=names, columns=names, data=float('inf'))
-    min_dists.index.name = 'from'
-    min_dists.columns.name = 'to'
+    if resume_from_pickles and min_paths_pickle.exists():
+        # (assuming all other files exist if min_paths_pickle does)
+        pathway_min_dists = pd.read_pickle(pathway_min_dists_pickle)
+        pathway_min_paths = pd.read_pickle(pathway_min_paths_pickle)
 
-    # TODO check these work
-    pathway_min_paths = pd.DataFrame(index=names, columns=names, data=float('nan'),
-        dtype='object'
-    )
-    pathway_min_paths.index.name = 'from'
-    pathway_min_paths.columns.name = 'to'
+        min_dists = pd.read_pickle(min_dists_pickle)
+        min_paths = pd.read_pickle(min_paths_pickle)
 
-    min_paths = pd.DataFrame(index=names, columns=names, data=float('nan'),
-        dtype='object'
-    )
-    min_paths.index.name = 'from'
-    min_paths.columns.name = 'to'
+        assert (
+            min_dists.isna().any().any() and pathway_min_dists.isna().any().any()
+        ), ('computation already complete. set resume_from_pickles=False or delete '
+            'distance / path pickles'
+        )
+
+        # TODO TODO use first NaN row/col as (name1, name2) to start (+ implement below)
+        # TODO error/prompt to recompute if no NaN in dists (in this branch)
+        # (assuming i have switched to using NaNs to represent stuff not computed yet)
+        import ipdb; ipdb.set_trace()
+    else:
+        min_dists, min_paths = init_dist_and_path_matrices(names)
+        pathway_min_dists, pathway_min_paths = init_dist_and_path_matrices(names)
+
+        # TODO delete
+        # (after making sure collapse_transport_rxns_across_paths is working properly)
+        min_dists_with_transport, min_paths_with_transport = \
+            init_dist_and_path_matrices(names)
+        pathway_min_dists_with_transport, pathway_min_paths_with_transport = \
+            init_dist_and_path_matrices(names)
+        #
 
     # TODO need to manually specify len in tqdm? regardless, might want to so i can
     # advance in inner loop...
@@ -1492,12 +1571,20 @@ def main():
                     # TODO flag to decide whether to collapse transport reactions?
                     # maybe they should be counted?
 
+                    # TODO delete
+                    update_dist_and_path(
+                        pathway_min_dists_with_transport,
+                        pathway_min_paths_with_transport,
+                        name1, name2, pathway_len, pathway_paths
+                    )
+                    #
+
                     pathway_len, pathway_paths = collapse_transport_rxns_across_paths(
                         transport_reaction_metaids, pathway_paths
                     )
-                    if pathway_len < pathway_min_dists.at[name1, name2]:
-                        pathway_min_dists.at[name1, name2] = pathway_len
-                        pathway_min_paths.at[name1, name2] = pathway_paths
+                    update_dist_and_path(pathway_min_dists, pathway_min_paths,
+                        name1, name2, pathway_len, pathway_paths
+                    )
 
                     # NOTE: current implementation will only ever return one path, even
                     # of there are two of same length
@@ -1532,12 +1619,19 @@ def main():
                 # particular input you have as to which particular output you'll get?
 
                 if len(reaction_paths) > 0:
+                    # TODO delete
+                    update_dist_and_path(
+                        min_dists_with_transport, min_paths_with_transport,
+                        name1, name2, reaction_len, reaction_paths
+                    )
+                    #
+
                     reaction_len, reaction_paths = collapse_transport_rxns_across_paths(
                         transport_reaction_metaids, reaction_paths
                     )
-                    if reaction_len < min_dists.at[name1, name2]:
-                        min_dists.at[name1, name2] = reaction_len
-                        min_paths.at[name1, name2] = reaction_paths
+                    update_dist_and_path(min_dists, min_paths, name1, name2,
+                        reaction_len, reaction_paths
+                    )
 
                     print(f'general routes ({len(reaction_paths)}):')
                     # TODO don't print any also in pathway routes (presumably those ones
@@ -1583,17 +1677,25 @@ def main():
                 #    assert len(reaction_paths) == 0
                 '''
 
-            # TODO TODO TODO also load these and resume from them
-
-            print('saving pathway distances and paths...', flush=True, end='')
-            pathway_min_dists.to_pickle('pathway_min_dists.p')
-            pathway_min_paths.to_pickle('pathway_min_paths.p')
-            print(' done', flush=True)
-
             print('saving distances and paths...', flush=True, end='')
-            min_dists.to_pickle('min_dists.p')
-            min_paths.to_pickle('min_paths.p')
+
+            pathway_min_dists.to_pickle(pathway_min_dists_pickle)
+            pathway_min_paths.to_pickle(pathway_min_paths_pickle)
+            min_dists.to_pickle(min_dists_pickle)
+            min_paths.to_pickle(min_paths_pickle)
+
+            # TODO delete
+            min_dists_with_transport.to_pickle('min_dists_with_transport.p')
+            min_paths_with_transport.to_pickle('min_paths_with_transport.p')
+            pathway_min_dists_with_transport.to_pickle(
+                'pathway_min_dists_with_transport.p'
+            )
+            pathway_min_paths_with_transport.to_pickle(
+                'pathway_min_paths_with_transport.p'
+            )
+            #
             print(' done', flush=True)
+
 
     import ipdb; ipdb.set_trace()
 
